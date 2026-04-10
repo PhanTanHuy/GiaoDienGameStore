@@ -1,5 +1,10 @@
 const currentPage = document.body.dataset.page;
 const app = document.getElementById("app");
+const STORAGE_KEYS = {
+  draft: "gamestore-submit-draft",
+  games: "gamestore-custom-games",
+  posts: "gamestore-custom-posts"
+};
 
 const users = [
   {
@@ -178,6 +183,17 @@ const games = [
   }
 ];
 
+function loadCustomGames() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.games) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+games.unshift(...loadCustomGames());
+
 const posts = [
   {
     id: 1,
@@ -214,6 +230,17 @@ const posts = [
   }
 ];
 
+function loadCustomPosts() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+posts.unshift(...loadCustomPosts());
+
 const commentsByGame = {
   1: [
     { userId: 1, text: "Tight controls and really good sense of speed.", time: "4h ago" },
@@ -239,7 +266,8 @@ const state = {
     tags: [],
     rating: 0,
     sort: "popular"
-  }
+  },
+  submitGameTagDraft: ""
 };
 
 const ALL_TAGS = [...new Set(games.flatMap((game) => game.tags))];
@@ -252,6 +280,54 @@ const formatCompact = (value) => Intl.NumberFormat("en", { notation: "compact" }
 const getUser = (id) => users.find((user) => user.id === id);
 const getGame = (id) => games.find((game) => game.id === id);
 const getQueryParam = (key) => new URLSearchParams(window.location.search).get(key);
+
+function isMyGame(game) {
+  if (!game) return false;
+  const dev = String(game.developer || "").trim().toLowerCase();
+  const myName = String(state.user?.name || "").trim().toLowerCase();
+  const myUsername = String(state.user?.username || "").trim().toLowerCase();
+  return dev === myName || dev === myUsername;
+}
+
+function saveCustomGames() {
+  const customGames = games.filter((game) => game.isCustom);
+  localStorage.setItem(STORAGE_KEYS.games, JSON.stringify(customGames));
+}
+
+function saveCustomPosts() {
+  const customPosts = posts.filter((post) => post.isCustom);
+  localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(customPosts));
+}
+
+function isMyPost(post) {
+  return Number(post?.userId) === Number(state.user?.id);
+}
+
+function gamesByUser(user) {
+  if (!user) return [];
+  const name = String(user.name || "").trim().toLowerCase();
+  const username = String(user.username || "").trim().toLowerCase();
+  return games.filter((game) => {
+    const developer = String(game.developer || "").trim().toLowerCase();
+    return developer === name || developer === username;
+  });
+}
+
+function saveDraft(draft) {
+  localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
+}
+
+function loadDraft() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.draft) || "null");
+  } catch (error) {
+    return null;
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(STORAGE_KEYS.draft);
+}
 
 function escapeHtml(value) {
   return value
@@ -280,14 +356,16 @@ function shell(content, options = {}) {
   const nav = [
     { href: "index.html", label: "Home", key: "home" },
     { href: "games.html", label: "Games", key: "games" },
-    { href: "posts.html", label: "Posts", key: "posts" }
+    { href: "posts.html", label: "Posts", key: "posts" },
+    { href: "submit-game.html", label: "Submit Game", key: "submit-game" }
   ];
 
   const sidebarLinks = [
     { href: "profile.html", label: "Profile" },
     { href: "dashboard.html", label: "Dashboard" },
     { href: "admin.html", label: "Admin" },
-    { href: "game-detail.html?id=2", label: "Spotlight" }
+    { href: "game-detail.html?id=2", label: "Spotlight" },
+    { href: "submit-game.html", label: "Upload Game" }
   ];
 
   return `
@@ -372,6 +450,7 @@ function showToast(message) {
 function gameCard(game, compact = false) {
   const vote = state.gameVotes[game.id] || 0;
   const favoriteActive = state.favorites.has(game.id);
+  const owned = isMyGame(game);
   return `
     <article class="card">
       <div class="card-media">
@@ -402,6 +481,7 @@ function gameCard(game, compact = false) {
               <div class="card-actions">
                 <a class="primary-button" href="game-detail.html?id=${game.id}">View</a>
                 ${game.price === 0 ? `<button class="ghost-button ghost-outline" data-play-game="${game.id}">Play</button>` : `<button class="ghost-button ghost-outline" data-buy-game="${game.id}">Buy</button>`}
+                ${owned ? `<a class="ghost-button ghost-outline" href="submit-game.html?edit=${game.id}">Edit</a>` : ""}
                 <button class="icon-button ${vote === 1 ? "active" : ""}" data-game-vote="${game.id}:1">👍</button>
                 <button class="icon-button ${vote === -1 ? "active" : ""}" data-game-vote="${game.id}:-1">👎</button>
               </div>
@@ -416,17 +496,18 @@ function postCard(post) {
   const author = getUser(post.userId);
   const vote = state.postVotes[post.id] || 0;
   const expanded = state.expandedPosts.has(post.id);
+  const owned = isMyPost(post);
   return `
     <article class="feed-card">
       <div class="feed-main">
         <div class="feed-head">
-          <div class="inline-actions">
+          <a class="inline-actions" href="profile.html?user=${author.id}">
             <img class="avatar" src="${author.avatar}" alt="${author.username}" />
             <div>
               <div><strong>${author.name}</strong></div>
               <div class="feed-meta">@${author.username} <span>•</span> <span>${post.createdAt}</span></div>
             </div>
-          </div>
+          </a>
           <span class="tag">${author.role}</span>
         </div>
         <div class="feed-content">${post.content}</div>
@@ -439,11 +520,12 @@ function postCard(post) {
           <button class="ghost-button ${vote === 1 ? "active" : ""}" data-post-vote="${post.id}:1">♥ ${formatCompact(post.likes + (vote === 1 ? 1 : 0))}</button>
           <button class="ghost-button ${vote === -1 ? "active" : ""}" data-post-vote="${post.id}:-1">Dislike</button>
           <button class="ghost-button" data-toggle-comments="${post.id}">Comments ${expanded ? "▲" : "▼"} ${post.comments}</button>
+          ${owned ? `<a class="ghost-button ghost-outline" href="submit-post.html?edit=${post.id}">Edit</a>` : ""}
         </div>
         <div class="${expanded ? "" : "hidden"}" data-comments-panel="${post.id}">
           <div class="comment-list">
             <div class="comment-card">
-              <div class="comment-meta"><strong>${state.user.username}</strong><span>•</span><span>Now</span></div>
+              <div class="comment-meta"><a href="profile.html?user=${state.user.id}"><strong>${state.user.username}</strong></a><span>•</span><span>Now</span></div>
               <div class="muted-text">Mock thread comments stay local to the UI.</div>
             </div>
             <div class="comment-card">
@@ -631,7 +713,7 @@ function renderGameDetailPage() {
               const author = getUser(comment.userId);
               return `
                 <div class="comment-card">
-                  <div class="comment-meta"><strong>${author.username}</strong><span>•</span><span>${comment.time}</span></div>
+                  <div class="comment-meta"><a href="profile.html?user=${author.id}"><strong>${author.username}</strong></a><span>•</span><span>${comment.time}</span></div>
                   <div>${comment.text}</div>
                 </div>
               `;
@@ -693,7 +775,7 @@ function renderGameDetailPage() {
             <div class="tag-row">${game.tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}</div>
             <div class="card-actions">
               <button class="primary-button" data-buy-game="${game.id}">${game.price === 0 ? "Download" : "Buy Now"}</button>
-              <button class="ghost-button ghost-outline" data-play-game="${game.id}">Play</button>
+              <a class="ghost-button ghost-outline" href="play.html?id=${game.id}">Play</a>
               <button class="ghost-button ghost-outline ${state.favorites.has(game.id) ? "active" : ""}" data-favorite-game="${game.id}">Add to Favorite</button>
             </div>
             <div class="card-actions">
@@ -716,6 +798,7 @@ function renderPostsPage() {
           <h1 class="page-title">Threads-style posts for players and devs</h1>
           <p>Share updates, celebrate launches, and expand mock comments without leaving the page.</p>
         </div>
+        <a class="primary-button" href="submit-game.html">Đăng game</a>
       </div>
       <div class="feed">
         <div class="panel composer">
@@ -738,17 +821,155 @@ function renderPostsPage() {
   `);
 }
 
+function renderSubmitGamePage() {
+  const suggestedTags = ALL_TAGS.length
+    ? ALL_TAGS
+    : ["Action", "Adventure", "RPG", "Casual", "Indie", "Multiplayer"];
+  const editId = Number(getQueryParam("edit"));
+  const draft = loadDraft();
+  const editingGame = editId ? getGame(editId) : null;
+  const source = editingGame || draft || {};
+  const selectedTags = source.tags || [];
+  const customTags = source.customTags || [];
+  const selectedPlatform = source.platform || "windows";
+  const selectedPrice = Number(source.price || 0);
+  const selectedVideo = source.rawVideo || "";
+
+  return shell(`
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Creator Upload</span>
+          <h1 class="page-title">${editingGame ? "Chỉnh sửa game" : "Đăng game mới lên cửa hàng"}</h1>
+          <p>Tải build cho Windows, Android hoặc WebGL, thêm ảnh đại diện, ảnh show game, video YouTube, tag và giá bán.</p>
+        </div>
+      </div>
+      <div class="submit-layout">
+        <form class="panel form-card" id="submit-game-form" data-edit-id="${editingGame?.id || ""}">
+          <div class="form-grid">
+            <div class="field-group">
+              <label for="game-title">Tên game</label>
+              <input class="input" id="game-title" name="title" type="text" placeholder="Ví dụ: Shadow Arena" value="${escapeHtml(source.title || "")}" required />
+            </div>
+            <div class="field-group">
+              <label for="game-developer">Studio / Nhà phát triển</label>
+              <input class="input" id="game-developer" name="developer" type="text" value="${escapeHtml(source.developer || state.user.name)}" required />
+            </div>
+            <div class="field-group">
+              <label for="game-platform">Loại build</label>
+              <select class="select" id="game-platform" name="platform" required>
+                <option value="windows" ${selectedPlatform === "windows" ? "selected" : ""}>Windows (.zip)</option>
+                <option value="android" ${selectedPlatform === "android" ? "selected" : ""}>Android (.apk)</option>
+                <option value="webgl" ${selectedPlatform === "webgl" ? "selected" : ""}>WebGL (.zip)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="game-price">Giá game (USD)</label>
+              <input class="input" id="game-price" name="price" type="number" min="0" step="0.01" value="${selectedPrice}" required />
+            </div>
+            <div class="field-group form-grid-full">
+              <label for="game-short-description">Mô tả ngắn</label>
+              <textarea class="input textarea" id="game-short-description" name="description" placeholder="Giới thiệu ngắn gọn, hấp dẫn về game của bạn..." required>${escapeHtml(source.description || "")}</textarea>
+            </div>
+            <div class="field-group form-grid-full">
+              <label for="game-long-description">Mô tả chi tiết</label>
+              <textarea class="input textarea" id="game-long-description" name="longDescription" placeholder="Nêu gameplay, tính năng nổi bật, nội dung, cấu hình hoặc lộ trình phát triển..." required>${escapeHtml(source.longDescription || "")}</textarea>
+            </div>
+            <div class="field-group form-grid-full">
+              <label for="game-build-file">File game</label>
+              <div class="file-drop">
+                <input class="input" id="game-build-file" name="buildFile" type="file" accept=".zip" ${editingGame ? "" : "required"} />
+                <div class="file-help">Chấp nhận file .zip cho Windows/WebGL hoặc file .apk cho Android. Hệ thống sẽ tự đổi điều kiện theo loại build bạn chọn.</div>
+                <div class="file-note" id="build-file-name">${source.buildFileName ? escapeHtml(source.buildFileName) : "Chưa chọn file game."}</div>
+              </div>
+            </div>
+            <div class="field-group">
+              <label for="game-cover">Ảnh đại diện game</label>
+              <div class="file-drop">
+                <input class="input" id="game-cover" name="cover" type="file" accept="image/*" ${editingGame || source.heroImage ? "" : "required"} />
+                <div class="file-note" id="cover-file-name">${source.coverFileName ? escapeHtml(source.coverFileName) : source.heroImage ? "Đang dùng ảnh đã lưu." : "Chưa chọn ảnh đại diện."}</div>
+              </div>
+            </div>
+            <div class="field-group">
+              <label for="game-gallery">Ảnh show game</label>
+              <div class="file-drop">
+                <input class="input" id="game-gallery" name="gallery" type="file" accept="image/*" multiple />
+                <div class="file-help">Có thể chọn nhiều ảnh screenshot hoặc key art.</div>
+                <div class="file-note" id="gallery-file-name">${source.galleryFileNames?.length ? `${source.galleryFileNames.length} files selected` : source.gallery?.length ? `${source.gallery.length} ảnh đã lưu` : "Chưa chọn ảnh show game."}</div>
+              </div>
+            </div>
+            <div class="field-group form-grid-full">
+              <label for="game-video">Link YouTube video game</label>
+              <input class="input" id="game-video" name="video" type="url" placeholder="https://www.youtube.com/watch?v=..." value="${escapeHtml(selectedVideo)}" />
+            </div>
+            <div class="field-group form-grid-full">
+              <label>Tag game</label>
+              <div class="tag-selector">
+                ${suggestedTags
+                  .map(
+                    (tag) => `
+                      <label class="tag-option">
+                        <input type="checkbox" name="tags" value="${tag}" ${selectedTags.includes(tag) ? "checked" : ""} />
+                        <span>${tag}</span>
+                      </label>
+                    `
+                  )
+                  .join("")}
+              </div>
+              <input class="input" id="custom-tags" name="customTags" type="text" placeholder="Tag tùy chọn, phân tách bằng dấu phẩy. Ví dụ: Soulslike, Co-op, Roguelite" value="${escapeHtml(customTags.join(", "))}" />
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="primary-button" type="submit">${editingGame ? "Cập nhật xem trước" : "Xem trước game"}</button>
+            <a class="ghost-button ghost-outline" href="games.html">Quay lại thư viện</a>
+          </div>
+        </form>
+        <aside class="panel detail-panel">
+          <h2>Checklist trước khi đăng</h2>
+          <div class="summary-list">
+            <div class="summary-item">
+              <strong>Build hợp lệ</strong>
+              <div class="field-help">Windows và WebGL dùng file .zip. Android dùng file .apk.</div>
+            </div>
+            <div class="summary-item">
+              <strong>Media thu hút</strong>
+              <div class="field-help">Ảnh đại diện nên là key art rõ nét, ảnh show game nên thể hiện gameplay thật.</div>
+            </div>
+            <div class="summary-item">
+              <strong>Preview hiện tại</strong>
+              <ul class="preview-list">
+                <li id="preview-platform">Nền tảng: Windows</li>
+                <li id="preview-price">Giá: Free</li>
+                <li id="preview-tags">Tag: Chưa chọn</li>
+                <li id="preview-video">Video: Chưa có link</li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  `);
+}
+
 function renderProfilePage() {
-  const favoriteGames = games.filter((game) => state.favorites.has(game.id));
-  const authoredPosts = posts.filter((post) => post.userId === state.user.id);
+  const requestedUserId = Number(getQueryParam("user"));
+  const profileUser = getUser(requestedUserId) || state.user;
+  const isSelfProfile = profileUser.id === state.user.id;
+  const favoriteGames = isSelfProfile ? games.filter((game) => state.favorites.has(game.id)) : [];
+  const authoredPosts = posts.filter((post) => post.userId === profileUser.id);
+  const authoredGames = gamesByUser(profileUser);
+  const tabsOrder = isSelfProfile ? ["games", "posts", "favorites"] : ["games", "posts"];
+  if (!tabsOrder.includes(state.activeProfileTab)) {
+    state.activeProfileTab = "games";
+  }
   const tabs = {
-    games: games.slice(0, 3),
+    games: authoredGames,
     posts: authoredPosts,
     favorites: favoriteGames
   };
 
   const content = {
-    games: `<div class="grid game-grid">${tabs.games.map((game) => gameCard(game)).join("")}</div>`,
+    games: authoredGames.length ? `<div class="grid game-grid">${tabs.games.map((game) => gameCard(game)).join("")}</div>` : `<div class="panel empty-state"><h3>Chưa có game nào</h3></div>`,
     posts: authoredPosts.length ? `<div class="feed">${authoredPosts.map((post) => postCard(post)).join("")}</div>` : `<div class="panel empty-state"><h3>No posts yet</h3></div>`,
     favorites: favoriteGames.length ? `<div class="grid game-grid">${favoriteGames.map((game) => gameCard(game)).join("")}</div>` : `<div class="panel empty-state"><h3>No favorites yet</h3></div>`
   };
@@ -756,17 +977,17 @@ function renderProfilePage() {
   return shell(`
     <section class="section profile-layout">
       <div class="panel profile-banner">
-        <img class="avatar" style="width:88px;height:88px;" src="${state.user.avatar}" alt="${state.user.username}" />
+        <img class="avatar" style="width:88px;height:88px;" src="${profileUser.avatar}" alt="${profileUser.username}" />
         <div>
-          <h1>${state.user.name}</h1>
-          <div class="feed-meta">@${state.user.username}</div>
-          <p class="muted-text">${state.user.bio}</p>
-          ${state.user.blocked ? `<div class="tag accent">Tài khoản đã bị khóa</div>` : ""}
+          <h1>${profileUser.name}</h1>
+          <div class="feed-meta">@${profileUser.username}</div>
+          <p class="muted-text">${profileUser.bio}</p>
+          ${profileUser.blocked ? `<div class="tag accent">Tài khoản đã bị khóa</div>` : ""}
         </div>
-        <button class="primary-button" id="follow-button">Follow</button>
+        ${isSelfProfile ? `<a class="primary-button" href="submit-game.html">Đăng game</a>` : `<button class="primary-button" id="follow-button">Follow</button>`}
       </div>
       <div class="tab-row">
-        ${["games", "posts", "favorites"]
+        ${tabsOrder
           .map((tab) => `<button class="tab-button ghost-button ${state.activeProfileTab === tab ? "active" : ""}" data-profile-tab="${tab}">${tab[0].toUpperCase() + tab.slice(1)}</button>`)
           .join("")}
       </div>
@@ -800,7 +1021,7 @@ function renderDashboardPage() {
       <div class="table-card">
         <div class="section-head">
           <h2>Manage Games</h2>
-          <button class="primary-button">Upload</button>
+          <a class="primary-button" href="submit-game.html">Upload</a>
         </div>
         <div class="table-list">
           ${devGames
@@ -812,7 +1033,7 @@ function renderDashboardPage() {
                     <div class="small-meta">${formatCompact(game.downloads)} downloads • ${formatCompact(game.views)} views</div>
                   </div>
                   <div class="inline-actions">
-                    <button class="ghost-button ghost-outline">Edit</button>
+                    <a class="ghost-button ghost-outline" href="game-review.html?edit=${game.id}">Edit</a>
                     <button class="ghost-button ghost-outline">Delete</button>
                   </div>
                 </div>
@@ -824,7 +1045,7 @@ function renderDashboardPage() {
       <div class="table-card">
         <div class="section-head">
           <h2>Manage Posts</h2>
-          <button class="ghost-button ghost-outline">Create</button>
+          <a class="ghost-button ghost-outline" href="submit-post.html">Create</a>
         </div>
         <div class="table-list">
           ${posts
@@ -836,7 +1057,7 @@ function renderDashboardPage() {
                     <div class="small-meta">${formatCompact(post.likes)} likes • ${post.createdAt}</div>
                   </div>
                   <div class="inline-actions">
-                    <button class="ghost-button ghost-outline">Edit</button>
+                    <a class="ghost-button ghost-outline" href="submit-post.html?edit=${post.id}">Edit</a>
                     <button class="ghost-button ghost-outline">Delete</button>
                   </div>
                 </div>
@@ -885,15 +1106,282 @@ function renderAdminPage() {
   `);
 }
 
+function renderGameReviewPage() {
+  const editId = Number(getQueryParam("edit"));
+  const editingGame = editId ? getGame(editId) : null;
+  const draft = loadDraft();
+  const previewGame = editingGame || draft;
+
+  if (!previewGame) {
+    return shell(`
+      <section class="section">
+        <div class="panel empty-state">
+          <h2>Chưa có dữ liệu xem trước</h2>
+          <p class="muted-text">Hãy tạo hoặc chỉnh sửa game trước khi mở trang review.</p>
+          <div class="toolbar" style="justify-content:center;">
+            <a class="primary-button" href="submit-game.html">Tạo game mới</a>
+            <a class="ghost-button ghost-outline" href="dashboard.html">Về dashboard</a>
+          </div>
+        </div>
+      </section>
+    `);
+  }
+
+  const tags = previewGame.tags || [];
+  const gallery = previewGame.gallery?.length ? previewGame.gallery : [previewGame.heroImage];
+  const isEditingExisting = Boolean(editingGame);
+  const video = previewGame.video || "https://www.youtube.com/embed/dQw4w9WgXcQ";
+
+  return shell(`
+    <section class="section preview-hero">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">${isEditingExisting ? "Edit Preview" : "Before Publish"}</span>
+          <h1 class="page-title">${isEditingExisting ? "Xem trước và chỉnh sửa game" : "Xem trước game trước khi đăng"}</h1>
+          <p>Đây là cách người chơi sẽ nhìn thấy trang game của bạn.</p>
+        </div>
+        <div class="toolbar">
+          <a class="ghost-button ghost-outline" href="submit-game.html${isEditingExisting ? `?edit=${editingGame.id}` : ""}">Quay lại chỉnh sửa</a>
+          <button class="primary-button" data-publish-game="${isEditingExisting ? editingGame.id : "draft"}">${isEditingExisting ? "Lưu thay đổi" : "Đăng game"}</button>
+        </div>
+      </div>
+
+      <div class="panel preview-banner">
+        <img src="${previewGame.heroImage}" alt="${previewGame.title}" />
+        <div class="preview-overlay">
+          <div class="tag accent">${previewGame.status || "preview"}</div>
+          <h1>${previewGame.title}</h1>
+          <div class="meta">by ${previewGame.developer}</div>
+          <div class="meta-row">
+            <span class="price ${previewGame.price === 0 ? "free" : "paid"}">${formatPrice(Number(previewGame.price || 0))}</span>
+            ${tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="detail-layout">
+        <div class="detail-header">
+          <div class="panel detail-panel">
+            <h2>Giới thiệu ngắn</h2>
+            <p class="feed-content">${previewGame.description}</p>
+          </div>
+          <div class="panel detail-panel">
+            <h2>Mô tả chi tiết</h2>
+            <p class="feed-content">${previewGame.longDescription}</p>
+          </div>
+          ${gallery.length ? `<div class="panel detail-panel"><h2>Ảnh show game</h2><div class="preview-gallery">${gallery.map((image) => `<img src="${image}" alt="${previewGame.title} screenshot" />`).join("")}</div></div>` : ""}
+        </div>
+        <aside class="detail-sidebar">
+          <div class="panel detail-panel">
+            <h2>Thông tin phát hành</h2>
+            <div class="summary-list">
+              <div class="summary-item"><strong>Nền tảng</strong><div class="field-help">${previewGame.platformLabel || "Custom build"}</div></div>
+              <div class="summary-item"><strong>Giá bán</strong><div class="field-help">${formatPrice(Number(previewGame.price || 0))}</div></div>
+              <div class="summary-item"><strong>Tag</strong><div class="field-help">${tags.join(", ") || "Indie"}</div></div>
+            </div>
+          </div>
+          <iframe class="video-frame" src="${video}" title="${previewGame.title} video" allowfullscreen></iframe>
+        </aside>
+      </div>
+    </section>
+  `);
+}
+
+function renderPlayPage() {
+  const requestedId = Number(getQueryParam("id")) || 1;
+  const game = getGame(requestedId) || games[0];
+  const urlParam = getQueryParam("url");
+  const webglUrl = urlParam || game.webglUrl || "";
+
+  const frame = webglUrl
+    ? `
+      <div class="player-frame">
+        <iframe
+          id="webgl-iframe"
+          src="${webglUrl}"
+          title="${escapeHtml(game.title)} WebGL"
+          allow="fullscreen; autoplay; gamepad; clipboard-read; clipboard-write"
+          sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-popups"
+        ></iframe>
+      </div>
+      <div class="player-toolbar">
+        <div class="inline-actions">
+          <button class="ghost-button ghost-outline" type="button" data-webgl-action="reload">Reload</button>
+          <button class="ghost-button ghost-outline" type="button" data-webgl-action="fullscreen">Fullscreen</button>
+        </div>
+        <div class="muted-text">Tip: WebGL chạy ổn nhất khi mở qua local server (http://localhost), không phải file://</div>
+      </div>
+    `
+    : `
+      <div class="panel empty-state">
+        <h2>Game này chưa có link WebGL để chơi</h2>
+        <p class="muted-text">Bạn có thể mở trang này với tham số <code>?url=...</code> trỏ tới file <code>index.html</code> của build WebGL (đang được host).</p>
+        <div class="toolbar" style="justify-content:center;">
+          <a class="primary-button" href="submit-game.html?edit=${game.id}">Thêm link WebGL</a>
+          <a class="ghost-button ghost-outline" href="game-detail.html?id=${game.id}">Về trang game</a>
+        </div>
+      </div>
+    `;
+
+  return shell(`
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Play</span>
+          <h1 class="page-title">${game.title}</h1>
+          <p>Trải nghiệm bản WebGL trực tiếp trong trình duyệt.</p>
+        </div>
+        <a class="ghost-button ghost-outline" href="game-detail.html?id=${game.id}">Game details</a>
+      </div>
+
+      <div class="player-layout">
+        <div>
+          ${frame}
+        </div>
+        <aside class="panel detail-panel">
+          <div class="tag accent">${game.status}</div>
+          <h2 style="margin-top:12px;">Thông tin</h2>
+          <div class="meta">by ${game.developer}</div>
+          <div class="meta-row">
+            <span class="price ${game.price === 0 ? "free" : "paid"}">${formatPrice(game.price)}</span>
+            <span class="tag">${formatCompact(game.views)} views</span>
+            <span class="tag">${formatCompact(game.downloads)} downloads</span>
+          </div>
+          <div class="tag-row">${(game.tags || []).map((tag) => `<span class="tag">${tag}</span>`).join("")}</div>
+          <div class="panel" style="margin-top:16px;background:rgba(255,255,255,0.03);">
+            <div class="meta">Mô tả</div>
+            <div class="feed-content">${game.description}</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  `);
+}
+
+function renderSubmitPostPage() {
+  const editId = Number(getQueryParam("edit"));
+  const editingPost = editId ? posts.find((post) => post.id === editId) : null;
+  const content = editingPost?.content || "";
+  const images = (editingPost?.images || []).join(", ");
+
+  return shell(`
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Community</span>
+          <h1 class="page-title">${editingPost ? "Chỉnh sửa bài viết" : "Tạo bài viết"}</h1>
+          <p>${editingPost ? "Bạn có thể cập nhật nội dung và ảnh của bài viết." : "Tạo post mới cho community feed."}</p>
+        </div>
+      </div>
+
+      <div class="panel form-card">
+        <form id="submit-post-form" data-edit-id="${editingPost?.id || ""}">
+          <div class="field-group">
+            <label for="post-content">Nội dung</label>
+            <textarea class="input textarea" id="post-content" name="content" placeholder="Chia sẻ update, patch notes, link demo..." required>${escapeHtml(content)}</textarea>
+          </div>
+          <div class="field-group">
+            <label for="post-images">Link ảnh (tuỳ chọn)</label>
+            <input class="input" id="post-images" name="images" type="text" placeholder="Nhập link ảnh, phân tách bằng dấu phẩy" value="${escapeHtml(images)}" />
+            <div class="field-help">Ví dụ: https://.../a.jpg, https://.../b.png</div>
+          </div>
+          <div class="toolbar">
+            <button class="primary-button" type="submit">${editingPost ? "Lưu thay đổi" : "Đăng bài"}</button>
+            <a class="ghost-button ghost-outline" href="profile.html">Về profile</a>
+            <a class="ghost-button ghost-outline" href="posts.html">Về feed</a>
+          </div>
+        </form>
+      </div>
+    </section>
+  `);
+}
+
 const renderers = {
   home: renderHomePage,
   games: renderGamesPage,
   "game-detail": renderGameDetailPage,
+  "game-review": renderGameReviewPage,
+  play: renderPlayPage,
   posts: renderPostsPage,
+  "submit-game": renderSubmitGamePage,
+  "submit-post": renderSubmitPostPage,
   profile: renderProfilePage,
   dashboard: renderDashboardPage,
   admin: renderAdminPage
 };
+
+function youtubeEmbedUrl(input) {
+  if (!input) return "";
+  try {
+    const url = new URL(input);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.replace("/", "");
+      return id ? `https://www.youtube.com/embed/${id}` : "";
+    }
+    if (url.hostname.includes("youtube.com")) {
+      const id = url.searchParams.get("v");
+      return id ? `https://www.youtube.com/embed/${id}` : "";
+    }
+  } catch (error) {
+    return "";
+  }
+  return "";
+}
+
+function platformLabel(platform) {
+  const labels = {
+    windows: "Windows (.zip)",
+    android: "Android (.apk)",
+    webgl: "WebGL (.zip)"
+  };
+  return labels[platform] || "Custom build";
+}
+
+function setFileNote(target, files, emptyText) {
+  if (!target) return;
+  if (!files || !files.length) {
+    target.textContent = emptyText;
+    return;
+  }
+  target.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
+}
+
+function updateSubmitGamePreview() {
+  const platform = qs("#game-platform");
+  const price = qs("#game-price");
+  const video = qs("#game-video");
+  const checkedTags = qsa('input[name="tags"]:checked').map((input) => input.value);
+  const customTags = (qs("#custom-tags")?.value || "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  const mergedTags = [...new Set([...checkedTags, ...customTags])];
+
+  const platformPreview = qs("#preview-platform");
+  const pricePreview = qs("#preview-price");
+  const tagsPreview = qs("#preview-tags");
+  const videoPreview = qs("#preview-video");
+
+  if (platformPreview && platform) {
+    const label = platform.options[platform.selectedIndex]?.textContent || platform.value;
+    platformPreview.textContent = `Nền tảng: ${label}`;
+  }
+
+  if (pricePreview && price) {
+    const value = Number(price.value || 0);
+    pricePreview.textContent = `Giá: ${value === 0 ? "Free" : `$${value.toFixed(2)}`}`;
+  }
+
+  if (tagsPreview) {
+    tagsPreview.textContent = `Tag: ${mergedTags.length ? mergedTags.join(", ") : "Chưa chọn"}`;
+  }
+
+  if (videoPreview) {
+    videoPreview.textContent = `Video: ${video?.value.trim() ? "Đã thêm link YouTube" : "Chưa có link"}`;
+  }
+}
 
 function renderApp() {
   const renderer = renderers[currentPage] || renderHomePage;
@@ -1015,7 +1503,10 @@ function bindEvents() {
   }
 
   qsa("[data-play-game]").forEach((button) => {
-    button.addEventListener("click", () => showToast("Launching mock browser build..."));
+    button.addEventListener("click", () => {
+      const id = Number(button.dataset.playGame);
+      window.location.href = `play.html?id=${id}`;
+    });
   });
 
   qsa("[data-buy-game]").forEach((button) => {
@@ -1039,8 +1530,10 @@ function bindEvents() {
         likes: 0,
         dislikes: 0,
         comments: 0,
-        createdAt: "Just now"
+        createdAt: "Just now",
+        isCustom: true
       });
+      saveCustomPosts();
       input.value = "";
       showToast("Post published");
       renderApp();
@@ -1082,6 +1575,226 @@ function bindEvents() {
       const action = button.dataset.adminAction;
       const label = action.charAt(0).toUpperCase() + action.slice(1);
       showToast(`${label} action completed (mock)`);
+    });
+  });
+
+  qsa("[data-webgl-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.webglAction;
+      const frame = qs("#webgl-iframe");
+      if (!frame) return;
+      if (action === "reload") {
+        frame.src = frame.src;
+      }
+      if (action === "fullscreen") {
+        frame.requestFullscreen?.();
+      }
+    });
+  });
+
+  const submitPostForm = qs("#submit-post-form");
+  if (submitPostForm) {
+    submitPostForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const editId = Number(submitPostForm.dataset.editId);
+      const formData = new FormData(submitPostForm);
+      const content = String(formData.get("content") || "").trim();
+      const images = String(formData.get("images") || "")
+        .split(",")
+        .map((url) => url.trim())
+        .filter(Boolean);
+
+      if (!content) {
+        showToast("Nội dung không được để trống");
+        return;
+      }
+
+      if (editId) {
+        const post = posts.find((item) => item.id === editId);
+        if (!post) {
+          showToast("Không tìm thấy post để sửa");
+          return;
+        }
+        if (!isMyPost(post)) {
+          showToast("Bạn chỉ có thể sửa post của mình (mock)");
+          return;
+        }
+        post.content = content;
+        post.images = images;
+        post.isCustom = true;
+        post.createdAt = "Updated now";
+        saveCustomPosts();
+        showToast("Đã lưu post");
+        window.location.href = "profile.html";
+        return;
+      }
+
+      posts.unshift({
+        id: Date.now(),
+        userId: state.user.id,
+        content,
+        images,
+        likes: 0,
+        dislikes: 0,
+        comments: 0,
+        createdAt: "Just now",
+        isCustom: true
+      });
+      saveCustomPosts();
+      showToast("Đăng bài thành công");
+      window.location.href = "posts.html";
+    });
+  }
+
+  const submitGameForm = qs("#submit-game-form");
+  if (submitGameForm) {
+    const platformInput = qs("#game-platform");
+    const buildInput = qs("#game-build-file");
+    const coverInput = qs("#game-cover");
+    const galleryInput = qs("#game-gallery");
+    const priceInput = qs("#game-price");
+    const videoInput = qs("#game-video");
+    const customTagsInput = qs("#custom-tags");
+    const tagInputs = qsa('input[name="tags"]');
+
+    const syncBuildAccept = () => {
+      if (!platformInput || !buildInput) return;
+      buildInput.accept = platformInput.value === "android" ? ".apk" : ".zip";
+      updateSubmitGamePreview();
+    };
+
+    syncBuildAccept();
+
+    platformInput?.addEventListener("change", syncBuildAccept);
+    priceInput?.addEventListener("input", updateSubmitGamePreview);
+    videoInput?.addEventListener("input", updateSubmitGamePreview);
+    customTagsInput?.addEventListener("input", updateSubmitGamePreview);
+    tagInputs.forEach((input) => input.addEventListener("change", updateSubmitGamePreview));
+
+    buildInput?.addEventListener("change", () => {
+      setFileNote(qs("#build-file-name"), buildInput.files, "Chưa chọn file game.");
+    });
+    coverInput?.addEventListener("change", () => {
+      setFileNote(qs("#cover-file-name"), coverInput.files, "Chưa chọn ảnh đại diện.");
+    });
+    galleryInput?.addEventListener("change", () => {
+      setFileNote(qs("#gallery-file-name"), galleryInput.files, "Chưa chọn ảnh show game.");
+    });
+
+    updateSubmitGamePreview();
+
+    submitGameForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(submitGameForm);
+      const platform = formData.get("platform");
+      const editId = Number(submitGameForm.dataset.editId);
+      const existingGame = editId ? getGame(editId) : null;
+      const buildFile = buildInput?.files?.[0];
+      const coverFile = coverInput?.files?.[0];
+      const galleryFiles = galleryInput?.files ? [...galleryInput.files] : [];
+      const expectedExtension = platform === "android" ? ".apk" : ".zip";
+
+      if (!existingGame && !buildFile) {
+        showToast("Vui lòng chọn file game");
+        return;
+      }
+
+      if (buildFile && !buildFile.name.toLowerCase().endsWith(expectedExtension)) {
+        showToast(`Build phải là file ${expectedExtension}`);
+        return;
+      }
+
+      if (!coverFile && !existingGame && !loadDraft()?.heroImage) {
+        showToast("Vui lòng tải ảnh đại diện");
+        return;
+      }
+
+      const selectedTags = formData.getAll("tags");
+      const customTags = String(formData.get("customTags") || "")
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      const mergedTags = [...new Set([...selectedTags, ...customTags])];
+
+      const currentDraft = loadDraft();
+      const coverUrl = coverFile ? URL.createObjectURL(coverFile) : existingGame?.heroImage || currentDraft?.heroImage || "";
+      const galleryUrls = galleryFiles.length
+        ? galleryFiles.map((file) => URL.createObjectURL(file))
+        : existingGame?.gallery || currentDraft?.gallery || (coverUrl ? [coverUrl] : []);
+      const rawVideo = String(formData.get("video") || "").trim();
+      const video = youtubeEmbedUrl(rawVideo);
+
+      const draftPayload = {
+        id: existingGame?.id || Date.now(),
+        title: String(formData.get("title")).trim(),
+        developer: String(formData.get("developer")).trim(),
+        price: Number(formData.get("price") || 0),
+        rating: existingGame?.rating || 0,
+        likes: existingGame?.likes || 0,
+        dislikes: existingGame?.dislikes || 0,
+        favorites: existingGame?.favorites || 0,
+        downloads: existingGame?.downloads || 0,
+        views: existingGame?.views || 0,
+        revenue: existingGame?.revenue || 0,
+        tags: mergedTags.length ? mergedTags : ["Indie"],
+        customTags,
+        status: existingGame?.status || "preview",
+        description: String(formData.get("description")).trim(),
+        longDescription: String(formData.get("longDescription")).trim(),
+        heroImage: coverUrl,
+        gallery: galleryUrls,
+        video: video || existingGame?.video || "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        rawVideo,
+        platform,
+        platformLabel: platformLabel(platform),
+        buildFileName: buildFile?.name || existingGame?.buildFileName || currentDraft?.buildFileName || "",
+        coverFileName: coverFile?.name || existingGame?.coverFileName || currentDraft?.coverFileName || "",
+        galleryFileNames: galleryFiles.length
+          ? galleryFiles.map((file) => file.name)
+          : existingGame?.galleryFileNames || currentDraft?.galleryFileNames || [],
+        isCustom: existingGame?.isCustom || false
+      };
+
+      saveDraft(draftPayload);
+      showToast("Đã cập nhật trang xem trước");
+      window.location.href = `game-review.html${existingGame ? `?edit=${existingGame.id}` : ""}`;
+    });
+  }
+
+  qsa("[data-publish-game]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const editId = button.dataset.publishGame;
+      const draft = loadDraft();
+      if (editId !== "draft") {
+        const game = getGame(Number(editId));
+        const payload = draft && draft.id === game?.id ? draft : game;
+        if (!game || !payload) {
+          showToast("Không tìm thấy game để cập nhật");
+          return;
+        }
+        Object.assign(game, payload, { status: "new", isCustom: true });
+        saveCustomGames();
+        clearDraft();
+        showToast("Đã lưu thay đổi game");
+        window.location.href = "dashboard.html";
+        return;
+      }
+
+      if (!draft) {
+        showToast("Chưa có dữ liệu để đăng");
+        return;
+      }
+
+      games.unshift({
+        ...draft,
+        status: "new",
+        isCustom: true
+      });
+      saveCustomGames();
+      clearDraft();
+      showToast("Đăng game thành công");
+      window.location.href = "games.html";
     });
   });
 }

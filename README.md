@@ -117,6 +117,19 @@ Tab **Favorites:**
 
 ---
 
+## Cập nhật mới: Edit trong card
+
+Đã bổ sung nút **Edit** trực tiếp trong card nội dung của chính bạn:
+
+- **Game card (Profile tab Games):** nút `Edit` nằm cạnh `Play/Buy`, mở trang sửa game (dùng lại flow `submit-game`).
+- **Post card (Profile tab Posts):** nút `Edit` trong action của bài viết, mở trang sửa bài `submit-post`.
+
+![Edit game trong card](<Image/review/Screenshot 2026-04-10 142953.png>)
+
+![Edit bài viết trong card](<Image/review/Screenshot 2026-04-10 143008.png>)
+
+---
+
 ## Ảnh game
 
 Ảnh được trỏ trong `js/main.js` tới thư mục `Image/` (ví dụ `Image/neon-drift-1.jpg`). Đặt file đúng tên trong `Image/README.md` để thumbnail và carousel hiển thị đầy đủ.
