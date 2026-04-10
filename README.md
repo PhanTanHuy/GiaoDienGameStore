@@ -31,6 +31,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 
 **Gợi ý:** Có thể thêm ô search thật (lọc client-side theo tên/tag) nếu muốn demo đầy đủ hơn.
 
+![Trang chủ — index.html](<Image/review/Screenshot 2026-04-10 111228.png>)
+
 ---
 
 ### `games.html` — Danh sách game
@@ -40,6 +42,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 **Điểm tốt:** Lọc chạy ngay trên client, phản hồi tức thì; phù hợp bài tập thể hiện JS.
 
 **Gợi ý:** Khi không chọn tag nào, vùng chip filter có thể trống — có thể ẩn hoặc hiển thị “No tags selected” cho rõ hơn.
+
+![Danh sách game — games.html](<Image/review/Screenshot 2026-04-10 111243.png>)
 
 ---
 
@@ -51,6 +55,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 
 **Gợi ý:** Query `?id=` — nhớ link từ lưới game luôn kèm `id` đúng (đã có trong card “View”).
 
+![Chi tiết game — game-detail.html](<Image/review/Screenshot 2026-04-10 111257.png>)
+
 ---
 
 ### `posts.html` — Feed cộng đồng
@@ -60,6 +66,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 **Điểm tốt:** Bố cục gần Threads: avatar, tên, nội dung, ảnh grid, hành động dưới bài.
 
 **Gợi ý:** Upload ảnh thật cần `FileReader` hoặc chỉ preview URL — hiện là UI mock.
+
+![Feed bài viết — posts.html](<Image/review/Screenshot 2026-04-10 111309.png>)
 
 ---
 
@@ -71,6 +79,18 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 
 **Gợi ý:** Có thể thêm `?user=id` nếu sau này nhiều profile.
 
+Tab **Games:**
+
+![Hồ sơ — tab Games](<Image/review/Screenshot 2026-04-10 111318.png>)
+
+Tab **Posts:**
+
+![Hồ sơ — tab Posts](<Image/review/Screenshot 2026-04-10 111326.png>)
+
+Tab **Favorites:**
+
+![Hồ sơ — tab Favorites](<Image/review/Screenshot 2026-04-10 111333.png>)
+
 ---
 
 ### `dashboard.html` — Bảng điều khiển developer
@@ -81,6 +101,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 
 **Gợi ý:** Nút chỉnh sửa có thể mở modal form — tùy chọn nâng cao.
 
+![Dashboard developer — dashboard.html](<Image/review/Screenshot 2026-04-10 111353.png>)
+
 ---
 
 ### `admin.html` — Admin
@@ -90,6 +112,8 @@ Frontend demo **HTML + CSS + JavaScript thuần** (không framework, không back
 **Điểm tốt:** Tách được vai trò admin so với dashboard dev.
 
 **Gợi ý:** Reject “with reason” có thể thêm ô textarea trong bước sau.
+
+![Admin — admin.html](<Image/review/Screenshot 2026-04-10 111406.png>)
 
 ---
 
